@@ -1,0 +1,369 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[a4paper,width=150mm,top=25mm,bottom=25mm]{geometry}
+
+\title{
+{Sparse Matrix Storage and Operations}
+}
+
+
+
+\author{Tim Nonet \\ Supervised by: Dr. Rahul Mazumder}
+
+\begin{document}
+
+\maketitle
+https://www.mathcha.io/editor
+\begin{abstract}
+The main idea of this project is to create user friendly implementations of sparse matrices and their basic operations to allow for efficient storage and computation of SNP data.
+
+\end{abstract}
+\section{Introduction}
+Storing many specific data sets, such as SNP, as dense matrices is quite inefficient due to the discrete and skewed distribution of entries in the data set. 
+\subsection{Compressed Row Format (CSR) }
+Depending on the specific structure of a sparse matrix different formats for efficiently storage exist. In addition, the anticipated use of the matrix can make certain formats more beneficial than others \cite{sparskit}. Our need for fast matrix vector multiplication suggest the use of CSR format. However, the need for the transpose operation adds some disadvantages to CSR. \newline \newline
+
+\noindent
+\textbf{Advantages}
+\begin{enumerate}
+\item Extremely quick matrix-vector multiplication
+\item Straight forward multi-threading 
+\item Easy extension to parallel GPU/CPU calculations 
+\item Linear storage in number of non-zero elements 
+\end{enumerate}
+
+\noindent
+\textbf{Disadvantages} 
+\begin{enumerate}
+\item Slow and memory expensive transpose operation
+\item Non-negligible Initialization Cost 
+\item Expensive to alter or update matrix
+\end{enumerate}
+
+\subsubsection{CSR Definition}
+The standard CSR format is defined by four parameters.
+\begin{enumerate}
+\item Row Pointer: A list of integers that define how many non-zero values are in each row
+\item Column Index: A list of integers that define which items in each row are non-zero
+\item Data List: A list of the non-zero values seen in the matrix
+\item Shape Tuple: The shape of the matrix
+\end{enumerate} 
+
+\noindent
+\textbf{Row Pointer}
+A list of integers of length equal to the number of rows in the matrix plus 1. If $R_p$ is a row point for a matrix then $R_p[i+1]$ will give the index at which the $i$-th row starts in the Column Index list. This allows for quick access to a specific row of the matrix.
+\begin{center}
+	\begin{equation}
+		\begin{split}
+			R_p[0] = 0\\
+			R_p[i+1] = ||a_i||_0 + R_p[i] 
+		\end{split}
+	\end{equation}
+\end{center}
+\noindent
+\textbf{Column Index}
+A list of integers of length equal to the number of non-zero elements in the matrix. If $C_i$ is a column index for a matrix then $C_i[R_p[j]:R_p[j+1]]$ will be the column indexes for the non-zero elements in row $j$.
+\begin{center}
+	\begin{equation}
+		\begin{split}
+			C_i[R_p[i+1]:R_p[i]] = \{j|a_{ij}  \neq 0\}
+		\end{split}
+	\end{equation}
+\end{center}
+\noindent
+\textbf{Data List}
+A list of the specified non-zero elements stored in matrix. If $D_l$ is a data list for a matrix then $D_l[R_p[j]:R_p[j+1]]$ will be the list of non-zero elements in row $j$  in the same order as $C_i[R_p[j]:R_p[j+1]]$.
+\begin{center}
+	\begin{equation}
+		\begin{split}
+			D_l[R_p[i+1]:R_p[i]] = \{a_{ij} |a_{ij}  \neq 0\}
+		\end{split}
+	\end{equation}
+\end{center}
+\noindent
+\textbf{Shape Tuple}
+A 2-tuple of the shape of the matrix. (Number of Rows, Number of Columns) \newline \newline
+\noindent
+\subsubsection{Example}
+Given a densely stored matrix:
+\begin{center}
+\begin{equation*}
+	A=
+	\begin{bmatrix}
+		2&2&0&1\\
+		3&3&4&1\\
+		0&0&0&0\\
+		0&0&-1&2
+	\end{bmatrix}
+\end{equation*}
+\end{center}
+The CSR format for \textbf{Row Pointer}, \textbf{Column Index}, \textbf{Data List} and \textbf{Shape Tuple} are constructed as follows: \newline \newline
+\noindent
+\textbf{Row Pointer}
+\begin{center}
+\begin{equation*}
+\begin{bmatrix}
+2 & 2 & 0 & 1\\
+3 & 3 & 4 & 1\\
+0 & 0 & 0 & 0\\
+0 & 0 & -1 & 2
+\end{bmatrix}\xrightarrow[\text{}]{\text{Rows}}\begin{matrix}
+( \ 2 & 2 & 0 & 1\ )\\
+( \ 3 & 3 & 4 & 1\ )\\
+( \ 0 & 0 & 0 & 0\ )\\
+( \ 0 & 0 & -1 & 2\ )
+\end{matrix}\xrightarrow[\text{Counts}]{\text{Non Zero}}\begin{matrix}
+3\\
+4\\
+0\\
+2
+\end{matrix}\xrightarrow[\text{Sum}]{\text{Cumulative}}\begin{matrix}
+R_{p}[ 0] \ =\ 0 & \rightarrow  & 0 &  & \\
+R_{p}[ 1] \ =\ R_{p}[ 0] \ +\ ||a_{1} ||_{0} & \rightarrow  & 3 &  & \\
+R_{p}[ 2] \ =\ R_{p}[ 1] \ +||a_{2} ||_{0} & \rightarrow  & 7 &  & \\
+R_{p}[ 3] \ =R_{p}[ 2] \ +||a_{3} ||_{0} & \rightarrow  & 7 &  & \\
+R_{p}[ 4] \ =R_{p}[ 3] \ +|a_{4} ||_{0} & \rightarrow  & 9 &  & 
+\end{matrix}
+\end{equation*}
+\end{center}
+\begin{center}
+\begin{equation*}
+	R_p=
+	\begin{bmatrix}
+		0\\
+		3\\
+		7\\
+		7\\
+		9
+	\end{bmatrix}
+\end{equation*}
+\end{center}
+
+\noindent
+\textbf{Column Index}
+
+
+\begin{equation*}
+\begin{bmatrix}
+2 & 2 & 0 & 1\\
+3 & 3 & 4 & 1\\
+0 & 0 & 0 & 0\\
+0 & 0 & -1 & 2
+\end{bmatrix}\xrightarrow[\text{}]{\text{Rows}}\begin{matrix}
+( \ 2 & 2 & 0 & 1\ )\\
+( \ 3 & 3 & 4 & 1\ )\\
+( \ 0 & 0 & 0 & 0\ )\\
+( \ 0 & 0 & -1 & 2\ )
+\end{matrix}\xrightarrow[\text{Indices}]{\text{Non Zero}}\begin{matrix}
+0 & 1 & 3 & \\
+0 & 1 & 2 & 3\\
+ &  &  & \\
+3 & 4 &  & 
+\end{matrix}\xrightarrow{\text{Flatten}}\begin{matrix}
+0\\
+1\\
+3\\
+0\\
+1\\
+2\\
+3\\
+3\\
+4
+\end{matrix}
+\end{equation*}
+
+\begin{center}
+\begin{equation*}
+	C_i=
+	\begin{bmatrix}
+		0\\
+		1\\
+		3\\
+		0\\
+		1\\
+		2\\
+		3\\
+		3\\
+		4
+	\end{bmatrix}
+\end{equation*}
+\end{center}
+\noindent
+\textbf{Data List}
+
+
+\begin{equation*}
+\begin{bmatrix}
+2 & 2 & 0 & 1\\
+3 & 3 & 4 & 1\\
+0 & 0 & 0 & 0\\
+0 & 0 & -1 & 2
+\end{bmatrix}\xrightarrow[\text{}]{\text{Rows}}\begin{matrix}
+( \ 2 & 2 & 0 & 1\ )\\
+( \ 3 & 3 & 4 & 1\ )\\
+( \ 0 & 0 & 0 & 0\ )\\
+( \ 0 & 0 & -1 & 2\ )
+\end{matrix}\xrightarrow[\text{Values}]{\text{Non Zero}}\begin{matrix}
+2 & 2 & 1 & \\
+3 & 3 & 4 & 1\\
+ &  &  & \\
+-1 & 2 &  & 
+\end{matrix}\xrightarrow{\text{Flatten}}
+\begin{matrix}
+2\\
+2\\
+1\\
+3\\
+3\\
+4\\
+1\\
+-1\\
+2
+\end{matrix}
+\end{equation*}
+\begin{center}
+\begin{equation*}
+	D_l = 
+	\begin{bmatrix}
+	2\\
+	2\\
+	1\\
+	3\\
+	3\\
+	4\\
+	1\\
+	-1\\
+	2
+	\end{bmatrix}
+\end{equation*}
+\end{center}
+
+\noindent
+\textbf{Sparse A}
+\begin{equation*}
+	A=
+	\begin{bmatrix}
+		2&2&0&1\\
+		3&3&4&1\\
+		0&0&0&0\\
+		0&0&-1&2
+	\end{bmatrix} 
+	\rightarrow
+	R_p=
+	\begin{bmatrix}
+		0\\
+		3\\
+		7\\
+		7\\
+		9
+	\end{bmatrix},
+		C_i=
+	\begin{bmatrix}
+		0\\
+		1\\
+		3\\
+		0\\
+		1\\
+		2\\
+		3\\
+		3\\
+		4
+	\end{bmatrix},
+	D_l = \begin{bmatrix}
+	2\\
+	2\\
+	1\\
+	3\\
+	3\\
+	4\\
+	1\\
+	-1\\
+	2
+	\end{bmatrix},
+	S = (4,4)
+\end{equation*}
+
+To get the first row.
+
+
+\begin{gather*}
+\{i|a_{1} \neq 0\} \ =\ C_{i}[ R_{p}[ 0] :R_{p}[ 1]] \ =C_{i}[ 0:3] \ =\ \begin{bmatrix}
+0\\
+1\\
+3
+\end{bmatrix}\\
+\{a_{1i} |a_{1i} \neq 0\} \ =D_{l}[ R_{p}[ 0] :R_{p}[ 1]] \ =\ D_{l}[ 0:3] \ =\begin{bmatrix}
+2\\
+2\\
+1
+\end{bmatrix} \ \\
+a_{1} \ =\begin{bmatrix}
+2 & 2 & 0 & 1
+\end{bmatrix} \ 
+\end{gather*}
+\subsubsection{Memory Cost and Binary Matrix}
+If all of the elements of a matrix are known to be the same. It is not necessary to store the Data List, $D_l$ and in stead just store one value. This can decrease the memory cost of storing a matrix.
+
+\noindent
+\textbf{Sparse Binary B example}
+\begin{equation*}
+	B=
+	\begin{bmatrix}
+		a&a&0&a\\
+		a&a&a&a\\
+		0&0&0&0\\
+		0&0&a&a
+	\end{bmatrix} 
+	\rightarrow
+	R_p=
+	\begin{bmatrix}
+		0\\
+		3\\
+		7\\
+		7\\
+		9
+	\end{bmatrix},
+		C_i=
+	\begin{bmatrix}
+		0\\
+		1\\
+		3\\
+		0\\
+		1\\
+		2\\
+		3\\
+		3\\
+		4
+	\end{bmatrix},
+	D_l = [a],
+	S = (4,4)
+\end{equation*}
+\noindent
+\textbf{Memory Cost}
+The memory usage of storing a Sparse CSR matrix is the cost of storing \textbf{Row Pointer}, \textbf{Column Index}, \textbf{Data List} and \textbf{Shape Tuple}. Luckily, textbf{Row Pointer}, \textbf{Column Index} are integers and we can choose between many different types of integers which will give different storage capacities and difference memory costs seen below in the following table: (Notice that all formats are unsigned as indexing is always positive and that each row has on average $K$ entries). Looking at the table we see what drives the needed size of the integer is not the number of non zero elements needed but the number of rows needed.  
+
+\begin{table}[]
+\begin{tabular}{|l|l|l|l|}
+\hline
+Integer Type              & Number of Rows                     & Number of Columns & Number of Non-Zero- \\        
+                                    & $N_r$  & $N_c$                        & Elements $N_{nnz}$                             \\ \hline
+8-bit Unsigned Int     & 255/K                            &                 255            &            255                              \\ \hline
+16-bit Unsigned Int   &  6.5e4/K                                                 &          6.5e4     &  6.5e4                        \\ \hline
+32-bit Unsigned Int  &  4.3e9/K                                                  &        4.3e9          &  4.3e9                             \\ \hline
+64-bit Unsigned Int  &  1.8e19/K                                                  &   1.8e19   & 1.8e19                 \\ \hline
+\end{tabular}
+\end{table}
+
+
+
+
+\section{Notation}
+This is the
+
+\section{References}
+\bibliographystyle{plain}
+\bibliography{bib1}
+
+\end{document}
