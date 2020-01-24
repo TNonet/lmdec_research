@@ -18,32 +18,14 @@ def eigengap_svd_start(array: LargeArrayType,
                        k: int,
                        b_max: int,
                        warm_start_row_factor: Union[int, float] = 5,
-                       reg: Union[int, float] = 0.05,
+                       lift: Union[int, float] = .1,
                        tol: float = 1e-6,
                        seed: int = 42,
                        log: int = 1):
-    """
-    Idea:
-        Find initial SVD estimate using default _sub_svd_start
-
-        Estimate eigen_gap
-        Estimate number of iterations to get to desired tolerance
-        Estimate time for number of iterations
-
-        new_estimate = 0
-
-        while new_estimate + extra_time < current_estimate:
-            Increases number of rows for _sub_svd_start by factor
-
-            Estimate eigen_gap
-            Estimate number of iterations to get to desired tolerance from current
-            Estimate time for number of iterations
-
-        return SVD
-        
-    Computing intelligent initial guess at:
+    """Computes intelligent initial guess for:
         1) Active column (k + buffer) subspace of array 
         2) The "locally optimal" size of buffer that balance eigen_gap convergence rates and dot product times.
+
         
     Examples
     --------
@@ -130,14 +112,17 @@ def eigengap_svd_start(array: LargeArrayType,
 
     init_acc = init_acc.compute()
 
-    S_gap = float('inf') * np.ones_like(S).compute()
+    if isinstance(S, DaskArrayType):
+        S: np.ndarray = S.compute()
+
+    S_gap = float('inf') * np.ones_like(S)
     S_gap[k:] = S[k - 1] / S[k:]
 
     req_iter = _project_accuracy(init_acc, S_gap, tol)
 
-    def k_cost(x):
-        coeffs = np.array([0.00995696, 0.94308865, reg])  # Found by brute force atm
-        return np.polyval(coeffs, x)
+    def k_cost(n_dimn):
+        coeffs = np.array([0.00995696, 0.94308865])  # Found by brute force atm
+        return np.polyval(coeffs, n_dimn)
 
     cost = _project_cost(k_cost, req_iter)
 
@@ -148,6 +133,9 @@ def eigengap_svd_start(array: LargeArrayType,
     x = array.T.dot(U_k)
 
     if log:
+        flog['S'] = S
+        flog['req_iter'] = req_iter
+        flog['costs'] = cost
         return x, flog
     else:
         return x
@@ -248,12 +236,15 @@ def rerand_svd_start(array: da.core.Array,
             temp_acc = scaled_svd_acc_return
 
         temp_acc, U = dask.persist(temp_acc, U)
+        if isinstance(temp_acc, DaskArrayType):
+            temp_acc = temp_acc.compute()
+
         if sub_log:
             sub_scaled_svd_acc_logs.append(temp_acc.compute())
 
-        if temp_acc.compute() < warm_start_quality:
+        if temp_acc < warm_start_quality:
             best_start = U
-            warm_start_quality = temp_acc.compute()
+            warm_start_quality = temp_acc
 
     if sub_log:
         flog = {_sub_svd_start.__name__: [sub_svd_start_logs],

@@ -4,7 +4,7 @@ from dask.array.linalg import tsqr
 import numpy as np
 import time
 
-from ..array.core.types import LargeArrayType, ArrayType
+from ..array.core.types import LargeArrayType, ArrayType, DaskArrayType
 from ..array.core.matrix_ops import sym_mat_mult, subspace_to_SVD, full_svd_to_k_svd
 from .svd_init import rerand_svd_start, rnormal_start, eigengap_svd_start
 from ..array.core.metrics import relative_converge_acc
@@ -73,7 +73,11 @@ class PowerMethod:
 
         # First item already exists from __start
         self.logs['tol'] = [np.nan]
-        self.logs['S'].append(S_k.compute())
+
+        if isinstance(S_k, DaskArrayType):
+            S_k = S_k.compute()
+
+        self.logs['S'].append(S_k)
 
         return x
 
@@ -132,10 +136,16 @@ class PowerMethod:
         U_k, S_k = full_svd_to_k_svd(U, S, k=self.k)
         U_k, S_k = dask.persist(U_k, S_k)
         # First item already exists from __start
-        self.logs['tol'].append(relative_converge_acc(S_k, self.logs['S'][-1], log=0).compute())
+        rel_acc = relative_converge_acc(S_k, self.logs['S'][-1], log=0)
+        if isinstance(rel_acc, DaskArrayType):
+            rel_acc = rel_acc.compute()
 
-        self.logs['S'].append(S_k.compute())
+        self.logs['tol'].append(rel_acc)
 
+        if isinstance(S_k, DaskArrayType):
+            S_k = S_k.compute()
+
+        self.logs['S'].append(S_k)
 
     def __svd(self, array: ArrayType, x: ArrayType) -> Tuple[ArrayType, ArrayType, ArrayType]:
         """
