@@ -10,6 +10,7 @@ from typing import Union, Optional, Tuple
 from .logging import tlog
 from .random import array_split, array_partition
 from .types import ArrayType, LargeArrayType, DaskArrayType
+from .array_serialization import array_serializer
 
 
 @tlog
@@ -34,6 +35,7 @@ def subspace_to_SVD(array: Union[LargeArrayType, ArrayType],
     x_t = array.dot(x)
     if compute and isinstance(array, DaskArrayType):
         x_t = x_t.persist()
+
     dot_log['end'] = time.time()
 
     tsqr_log = {'start': time.time()}
@@ -59,6 +61,7 @@ def subspace_to_SVD(array: Union[LargeArrayType, ArrayType],
 
 
 @tlog
+@array_serializer('x')
 def sym_mat_mult(array: LargeArrayType,
                  x: ArrayType,
                  p: Union[int, float] = 1,
@@ -82,7 +85,6 @@ def sym_mat_mult(array: LargeArrayType,
     :param log:
     :return: Dask Array of shape (n by k)
     """
-
     sub_log = max(0, log - 1)
 
     if p < 1:
@@ -148,6 +150,7 @@ def full_svd_to_k_svd(u: Optional[ArrayType] = None,
 
 
 @tlog
+@array_serializer('x')
 def _time_sym_mat_mult(array: LargeArrayType,
                        x: ArrayType,
                        p: float = 0.5,
@@ -201,6 +204,7 @@ def _time_sym_mat_mult(array: LargeArrayType,
 
 
 @tlog
+@array_serializer('x')
 def _approx_sym_mat_mult(array: LargeArrayType,
                          x: ArrayType,
                          p: Union[float, int] = .1,
