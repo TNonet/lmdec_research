@@ -2,7 +2,7 @@ import numpy as np
 import warnings
 
 from .random import array_split
-from .logging import tlog
+from lamade.array.core.wrappers.time_logging import tlog
 from .types import ArrayType, LargeArrayType, DaskArrayType
 
 from typing import Tuple, Union, Callable
@@ -120,9 +120,7 @@ def relative_converge_acc(x: ArrayType,
                           y: ArrayType,
                           p: Union[int, float] = 1,
                           norm: str = 2,
-                          compute: bool = True,
-                          log: int = 1) -> Union[ArrayType,
-                                                 Tuple[ArrayType, dict]]:
+                          log: int = 1) -> Union[float, Tuple[float, dict]]:
     """
     Computes relative change between x and y.
 
@@ -148,7 +146,6 @@ def relative_converge_acc(x: ArrayType,
     :param y:
     :param p:
     :param norm:
-    :param compute:
     :param log:
     :return:
     """
@@ -172,8 +169,8 @@ def relative_converge_acc(x: ArrayType,
         else:
             acc = _successive_norm_return
 
-    if compute and isinstance(acc, DaskArrayType):
-        acc = acc.persist()
+    if isinstance(acc, DaskArrayType):
+        acc = acc.compute()
 
     if log:
         return acc, flog
@@ -187,9 +184,7 @@ def scaled_svd_acc(array: LargeArrayType,
                    s: ArrayType,
                    norm: str = 'fro',
                    p: Union[int, float] = 1,
-                   compute: bool = True,
-                   log: int = 1) -> Union[ArrayType,
-                                          Tuple[ArrayType, dict]]:
+                   log: int = 1) -> Union[float, Tuple[float, dict]]:
     """
     Computes scaled accuracy of u and s being left eigen pairs of AA'
 
@@ -202,7 +197,6 @@ def scaled_svd_acc(array: LargeArrayType,
     :param s:
     :param norm:
     :param p:
-    :param compute:
     :param log
     :return:
     """
@@ -220,7 +214,6 @@ def scaled_svd_acc(array: LargeArrayType,
                                                                s=s,
                                                                p=p,
                                                                norm=norm,
-                                                               compute=compute,
                                                                log=sub_log)
         if sub_log:
             acc, _approx_scaled_svd_acc_log = _approx_scaled_svd_acc_return
@@ -233,8 +226,8 @@ def scaled_svd_acc(array: LargeArrayType,
 
         acc = _scaled_norm(denom - u.dot(s), denom, norm)
 
-    if compute and isinstance(acc, DaskArrayType):
-        acc = acc.persist()
+    if isinstance(acc, DaskArrayType):
+        acc = acc.compute()
 
     if log:
         return acc, flog
@@ -248,9 +241,7 @@ def _approx_scaled_svd_acc(array: LargeArrayType,
                            s: ArrayType,
                            p: float = 0.1,
                            norm: str = 'fro',
-                           compute: bool = True,
-                           log: int = 1) -> Union[ArrayType,
-                                                  Tuple[ArrayType, dict]]:
+                           log: int = 1) -> Union[float, Tuple[float, dict]]:
     """
     Compute approximate scaled accuracy of u and s being left eigen pairs of AA'.
 
@@ -259,7 +250,6 @@ def _approx_scaled_svd_acc(array: LargeArrayType,
     :param s:
     :param p:
     :param norm:
-    :param compute:
     :param log:
     :return:
 
@@ -321,8 +311,8 @@ def _approx_scaled_svd_acc(array: LargeArrayType,
 
     acc = _scaled_norm(denom - u1.dot(s), denom, norm, log=0)
 
-    if compute and isinstance(acc, DaskArrayType):
-        acc = acc.persist()
+    if isinstance(acc, DaskArrayType):
+        acc = acc.compute()
 
     if log:
         return acc, flog

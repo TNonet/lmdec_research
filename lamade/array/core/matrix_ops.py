@@ -7,16 +7,17 @@ import numpy as np
 
 from typing import Union, Optional, Tuple
 
-from .logging import tlog
+from lamade.array.core.wrappers.time_logging import tlog
 from .random import array_split, array_partition
 from .types import ArrayType, LargeArrayType, DaskArrayType
-from .array_serialization import array_serializer
+from lamade.array.core.wrappers.array_serialization import array_serializer
 
 
 @tlog
+@array_serializer('x')
 def subspace_to_SVD(array: Union[LargeArrayType, ArrayType],
                     x: ArrayType,
-                    k: int,
+                    k: Optional[int] = None,
                     compute: bool = False,
                     log: int = 1) -> Union[Tuple[ArrayType, ArrayType, ArrayType],
                                            Tuple[ArrayType, ArrayType, ArrayType, dict]]:
@@ -117,7 +118,7 @@ def sym_mat_mult(array: LargeArrayType,
 def full_svd_to_k_svd(u: Optional[ArrayType] = None,
                       s: Optional[ArrayType] = None,
                       v: Optional[ArrayType] = None,
-                      k: int = 1,
+                      k: Optional[int] = None,
                       log: int = 0) -> Union[ArrayType, Tuple[ArrayType, ...]]:
     """Removes buffer from SVD decomposition
 
