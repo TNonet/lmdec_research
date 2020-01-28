@@ -222,8 +222,10 @@ class PowerMethodEigenStart(PowerMethod):
         x = self.__start(array, seed)
 
         for i in range(self.max_iter):
+            print(i)
             x = self.__step(array, x, seed)
             self.__score(array, x)
+            print(self.logs['tol'][-1])
 
             if self.logs['tol'][-1] < self.scoring_tol:
                 break

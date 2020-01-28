@@ -4,11 +4,11 @@ from dask.array.linalg import tsqr
 from dask.array.random import RandomState
 import numpy as np
 
-from ..array.core.matrix_ops import full_svd_to_k_svd
-from ..array.core.metrics import scaled_svd_acc, acc_format_svd
+from ..array.core.matrix_ops import full_svd_to_k_svd, sym_mat_mult, subspace_to_SVD
+from ..array.core.metrics import scaled_svd_acc, acc_format_svd, relative_converge_acc
 from ..array.core.random import array_split
-from ..array.core.logging import tlog
-from ..array.core.types import LargeArrayType, DaskArrayType, ArrayType
+from lmdec.array.core.wrappers.time_logging import tlog
+from ..array.core.types import LargeArrayType, DaskArrayType
 
 from typing import Tuple, Union
 
@@ -18,7 +18,6 @@ def eigengap_svd_start(array: LargeArrayType,
                        k: int,
                        b_max: int,
                        warm_start_row_factor: Union[int, float] = 5,
-                       lift: Union[int, float] = .1,
                        tol: float = 1e-6,
                        seed: int = 42,
                        log: int = 1):
@@ -74,7 +73,6 @@ def eigengap_svd_start(array: LargeArrayType,
     :param k:
     :param b_max:
     :param warm_start_row_factor:
-    :param reg:
     :return:
 
     """
@@ -85,6 +83,7 @@ def eigengap_svd_start(array: LargeArrayType,
     m, n = array.shape
 
     rows = warm_start_row_factor * (k + b_max)
+    print('Rows:', rows)
     row_fraction = rows / m
 
     _sub_svd_start_return = _sub_svd_start(array,
@@ -98,27 +97,36 @@ def eigengap_svd_start(array: LargeArrayType,
     else:
         U, S, _ = _sub_svd_start_return
 
-    U, S = dask.persist(U, S)
-    U_k, S_k, = full_svd_to_k_svd(u=U, s=S, k=k)
+    U_0, S_0 = full_svd_to_k_svd(u=U, s=S, k=k+b_max)
+    S_0_k = full_svd_to_k_svd(s=S_0, k=k)
 
-    U_error, S_error = acc_format_svd(U_k, S_k, array.shape, log=0)
-    scaled_svd_acc_return = scaled_svd_acc(array, U_error, S_error, log=sub_log)
+    S_0_k = S_0_k.persist()
+
+    x = array.T.dot(U_0)
+    Q, _ = tsqr(x)
+    x = sym_mat_mult(array, Q, p=1, compute=True, log=0)
+    Q, _ = tsqr(x)
+
+    U_1, S_1, _ = subspace_to_SVD(array, Q, compute=True, log=0)
+
+    S_1_k = full_svd_to_k_svd(s=S_1, k=k)
+
+    U_1, S_1_k, = dask.persist(U_1, S_1_k)
+
+    relative_converge_acc_return = relative_converge_acc(S_0_k, S_1_k, log=sub_log)
 
     if sub_log:
-        init_acc, _sub_scaled_svd_acc_log = scaled_svd_acc_return
-        flog[scaled_svd_acc.__name__] = _sub_scaled_svd_acc_log
+        init_acc, relative_converge_acc_log = relative_converge_acc_return
     else:
-        init_acc = scaled_svd_acc_return
+        init_acc = relative_converge_acc_return
 
-    init_acc = init_acc.compute()
-
-    if isinstance(S, DaskArrayType):
-        S: np.ndarray = S.compute()
+    if isinstance(S_1, DaskArrayType):
+        S: np.ndarray = S_1.compute()
 
     S_gap = float('inf') * np.ones_like(S)
-    S_gap[k:] = S[k - 1] / S[k:]
+    S_gap[k:b_max] = S[k - 1] / S[k:b_max]
 
-    req_iter = _project_accuracy(init_acc, S_gap, tol)
+    req_iter = _project_accuracy(init_acc, S_gap, tol)/6
 
     def k_cost(n_dimn):
         coeffs = np.array([0.00995696, 0.94308865])  # Found by brute force atm
@@ -128,7 +136,7 @@ def eigengap_svd_start(array: LargeArrayType,
 
     buff_opt: int = np.argmin(cost)
 
-    U_k = full_svd_to_k_svd(u=U, k=buff_opt)
+    U_k = full_svd_to_k_svd(u=U_1, k=buff_opt)
 
     x = array.T.dot(U_k)
 
@@ -225,22 +233,16 @@ def rerand_svd_start(array: da.core.Array,
         else:
             U, S, _ = _sub_svd_start_return
 
+        U = U.persist()
         U_error, S_error = acc_format_svd(U, S, array.shape, log=0)
 
         scaled_svd_acc_return = scaled_svd_acc(array, U_error, S_error, log=sub_log)
         if sub_log:
             temp_acc, _sub_scaled_svd_acc_log = scaled_svd_acc_return
             sub_scaled_svd_logs.append(_sub_scaled_svd_acc_log)
-
+            sub_scaled_svd_acc_logs.append(temp_acc)
         else:
             temp_acc = scaled_svd_acc_return
-
-        temp_acc, U = dask.persist(temp_acc, U)
-        if isinstance(temp_acc, DaskArrayType):
-            temp_acc = temp_acc.compute()
-
-        if sub_log:
-            sub_scaled_svd_acc_logs.append(temp_acc.compute())
 
         if temp_acc < warm_start_quality:
             best_start = U
@@ -254,11 +256,12 @@ def rerand_svd_start(array: da.core.Array,
         flog = {}
 
     x = array.T.dot(best_start)
+    q, _ = tsqr(x)
 
     if log:
-        return x, flog
+        return q, flog
     else:
-        return x
+        return q
 
 
 @tlog

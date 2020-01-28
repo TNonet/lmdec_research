@@ -20,7 +20,7 @@ def main():
     import time
     import traceback
 
-    from lamade.decomp import PowerMethod
+    from lmdec.decomp import PowerMethod
 
     data_directory = '/nfs/pool002/users/tnonet/'
     matrix_list = ['10K_40K.h5py', '20K_80K.h5py', '40K_160K.h5py', '80K_320K.h5py', '160K_640K.h5py']

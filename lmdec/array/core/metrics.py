@@ -2,7 +2,7 @@ import numpy as np
 import warnings
 
 from .random import array_split
-from lamade.array.core.wrappers.time_logging import tlog
+from lmdec.array.core.wrappers.time_logging import tlog
 from .types import ArrayType, LargeArrayType, DaskArrayType
 
 from typing import Tuple, Union, Callable

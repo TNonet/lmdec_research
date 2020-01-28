@@ -7,10 +7,10 @@ import numpy as np
 
 from typing import Union, Optional, Tuple, List
 
-from lamade.array.core.wrappers.time_logging import tlog
+from lmdec.array.core.wrappers.time_logging import tlog
 from .random import array_split, array_geometric_partition
 from .types import ArrayType, LargeArrayType, DaskArrayType
-from lamade.array.core.wrappers.array_serialization import array_serializer
+from lmdec.array.core.wrappers.array_serialization import array_serializer
 
 
 @tlog

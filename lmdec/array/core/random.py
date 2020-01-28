@@ -2,7 +2,7 @@ from typing import Tuple, Union, List
 import numpy as np
 import warnings
 
-from lamade.array.core.wrappers.time_logging import tlog
+from lmdec.array.core.wrappers.time_logging import tlog
 
 
 @tlog
