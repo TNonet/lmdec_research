@@ -5,10 +5,10 @@ from dask.base import wait
 import time
 import numpy as np
 
-from typing import Union, Optional, Tuple
+from typing import Union, Optional, Tuple, List
 
 from lamade.array.core.wrappers.time_logging import tlog
-from .random import array_split, array_partition
+from .random import array_split, array_geometric_partition
 from .types import ArrayType, LargeArrayType, DaskArrayType
 from lamade.array.core.wrappers.array_serialization import array_serializer
 
@@ -65,7 +65,7 @@ def subspace_to_SVD(array: Union[LargeArrayType, ArrayType],
 @array_serializer('x')
 def sym_mat_mult(array: LargeArrayType,
                  x: ArrayType,
-                 p: Union[int, float] = 1,
+                 p: Union[int, float, slice] = 1,
                  seed: int = 42,
                  compute: bool = False,
                  log: int = 1) -> Union[ArrayType, Tuple[ArrayType, dict]]:
@@ -79,6 +79,8 @@ def sym_mat_mult(array: LargeArrayType,
     :param p: Percentage of Array to compute dot product with:
         p == 1: Full Dot Product
         p < 1: Stochastic Dot Product
+        type(p) == List[slice]
+            Order sections
     :param seed:
     :param compute:
         We do not pre-compute x. As any function in SVDecomp should return a computed function
@@ -88,8 +90,10 @@ def sym_mat_mult(array: LargeArrayType,
     """
     sub_log = max(0, log - 1)
 
-    if p < 1:
-        return _approx_sym_mat_mult(array=array, x=x, p=p, seed=seed, compute=compute, log=sub_log)
+    if isinstance(p, slice):
+        return _l_approx_sym_mat_mult(array=array, x=x, l=p, compute=compute, log=sub_log)
+    elif p < 1:
+        return _p_approx_sym_mat_mult(array=array, x=x, p=p, seed=seed, compute=compute, log=sub_log)
 
     dot_log = {'start': time.time()}
     x = array.dot(x)
@@ -183,7 +187,7 @@ def _time_sym_mat_mult(array: LargeArrayType,
     if not compute:
         raise Exception("Compute must be true to accurately record time of computations.")
 
-    partitions, dims = array_partition(x.shape, p=p, min_size=min_size)
+    partitions, dims = array_geometric_partition(x.shape, p=p, min_size=min_size, axis=2)
 
     partition_dot = []
     partition_log = []
@@ -206,12 +210,12 @@ def _time_sym_mat_mult(array: LargeArrayType,
 
 @tlog
 @array_serializer('x')
-def _approx_sym_mat_mult(array: LargeArrayType,
-                         x: ArrayType,
-                         p: Union[float, int] = .1,
-                         seed: int = 42,
-                         compute: bool = False,
-                         log: int = 1) -> Union[ArrayType, Tuple[ArrayType, dict]]:
+def _p_approx_sym_mat_mult(array: LargeArrayType,
+                           x: ArrayType,
+                           p: Union[float, int] = .1,
+                           seed: int = 42,
+                           compute: bool = False,
+                           log: int = 1) -> Union[ArrayType, Tuple[ArrayType, dict]]:
     """
 
     :param array:
@@ -234,6 +238,41 @@ def _approx_sym_mat_mult(array: LargeArrayType,
         index_sex, _ = array_split_return
 
     sub_array = array[index_sex, :]
+
+    sym_mat_mult_return = sym_mat_mult(sub_array, x, p=1, compute=compute, log=sub_log)
+
+    if sub_log:
+        x, sym_mat_mult_log = sym_mat_mult_return
+        flog[sym_mat_mult.__name__] = sym_mat_mult_log
+    else:
+        x = sym_mat_mult_return
+
+    if log:
+        return x, flog
+    else:
+        return x
+
+
+@tlog
+@array_serializer('x')
+def _l_approx_sym_mat_mult(array: LargeArrayType,
+                           x: ArrayType,
+                           l: slice,
+                           compute: bool = False,
+                           log: int = 1) -> Union[ArrayType, Tuple[ArrayType, dict]]:
+    """
+
+    :param array:
+    :param x:
+    :param l:
+    :param compute:
+    :param log:
+    :return:
+    """
+    flog = {}
+    sub_log = max(log - 1, 0)
+
+    sub_array = array[l, :]
 
     sym_mat_mult_return = sym_mat_mult(sub_array, x, p=1, compute=compute, log=sub_log)
 

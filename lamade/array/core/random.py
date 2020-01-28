@@ -43,7 +43,7 @@ def array_split(array_shape: Tuple[int, ...],
     if sample_size == m:
         warnings.warn('Degenerate Split. Decrease p. p = {} ~= 1'.format(p))
     elif sample_size == 0:
-        warnings.warn('Degenerate Split. Decrease p. p = {} ~= 1'.format(p))
+        warnings.warn('Degenerate Split. Decrease p. p = {} ~= 0'.format(p))
     else:
         pass
 
@@ -78,11 +78,11 @@ def _array_shape_check(array_shape: Tuple[int, ...]) -> Tuple[int, int]:
 
 
 @tlog
-def array_partition(array_shape: Tuple[int, ...],
-                    p: Union[float, int],
-                    min_size: int = 5,
-                    axis: int = 1,
-                    log: int = 0) -> Tuple[List[slice], List[int]]:
+def array_geometric_partition(array_shape: Tuple[int, ...],
+                              p: Union[float, int],
+                              min_size: int = 5,
+                              axis: int = 1,
+                              log: int = 0) -> Tuple[List[slice], List[int]]:
     """
 
     :param min_size:
@@ -100,7 +100,7 @@ def array_partition(array_shape: Tuple[int, ...],
     if axis == 1:
         pass
     elif axis == 2:
-        return array_partition((n, m), p=p, min_size=min_size, axis=1)
+        return array_geometric_partition((n, m), p=p, min_size=min_size, axis=1)
     else:
         raise Exception('Can only partition on axis = 1 or 2. axis = {}'.format(axis))
 
@@ -112,17 +112,17 @@ def array_partition(array_shape: Tuple[int, ...],
     if min_size < 1:
         raise Exception('Min size must be a positive integer.')
 
-    n_left = n
+    m_left = m
     partition = []
-    while n_left*p >= min_size:
-        part = int(n_left*p)
+    while m_left * p >= min_size:
+        part = int(m_left * p)
         partition.append(part)
-        n_left -= part
+        m_left -= part
 
-    if n_left:
-        partition.append(n_left)
+    if m_left:
+        partition.append(m_left)
 
-    if sum(partition) != n:
+    if sum(partition) != m:
         raise Exception("This error should not have occurred. Please report")
 
     partition = sorted(partition, reverse=True)
@@ -131,7 +131,79 @@ def array_partition(array_shape: Tuple[int, ...],
     offset = 0
 
     for end in partition:
-        slices.append(slice(offset, end+offset))
+        slices.append(slice(offset, end + offset))
         offset += end
 
     return slices, partition
+
+
+@tlog
+def array_constant_partition(array_shape: Tuple[int, ...],
+                             p: Union[float, int],
+                             min_size: int = 5,
+                             axis: int = 1,
+                             log: int = 0) -> List[slice]:
+    """
+
+    :param min_size:
+    :param array_shape:
+    :param p:
+    :param axis:
+    :param log:
+    :return:
+    """
+    if log:
+        raise Exception('Function is not logged.')
+
+    m, n = _array_shape_check(array_shape)
+
+    if axis == 1:
+        pass
+    elif axis == 2:
+        return array_constant_partition((n, m), p=p, min_size=min_size, axis=1)
+    else:
+        raise Exception('Can only partition on axis = 1 or 2. axis = {}'.format(axis))
+
+    if p <= 0:
+        raise Exception('Cannot partition with non-positive fraction.')
+    elif p >= 1:
+        raise Exception('Cannot partition with fraction more than 1.')
+
+    if min_size < 1:
+        raise Exception('Min size must be a positive integer.')
+
+    num_partitions = int(1/p)
+    partition_size = m // num_partitions
+    if num_partitions == 1:
+        raise warnings.warn('Only 1 Partition was created. int(1/p) == 1')
+
+    slices = []
+    if m % num_partitions == 0:
+        # Partition work perfectly -> Split perfectly
+        sections = range(0, m, partition_size)
+    else:
+        sections = list(range(0, m-partition_size, partition_size))
+        sections.append(m-1)
+
+    for start in sections:
+        slices.append(slice(start, start + partition_size))
+
+    return slices
+
+# Axis 1 Testing
+# for p in [.001, .1, .2, .5]:
+#     a_test = np.random.rand(1000, 1000)
+#     parts = array_constant_partition(a_test.shape, p=.1)
+#     a_copy = np.zeros_like(a_test)
+#     for part in parts:
+#         a_copy[part, :] = a_test[part, :]
+#     np.testing.assert_almost_equal(a_copy, a_test)
+
+# Axis 2 Testing
+# for p in [.001, .1, .2, .5]:
+#     a_test = np.random.rand(1000, 1000)
+#     parts = array_constant_partition(a_test.shape, p=.1, axis=2)
+#     a_copy = np.zeros_like(a_test)
+#     for part in parts:
+#         a_copy[:, part] = a_test[:, part]
+#     np.testing.assert_almost_equal(a_copy, a_test)
