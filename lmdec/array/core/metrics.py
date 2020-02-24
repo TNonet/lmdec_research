@@ -1,5 +1,7 @@
 import numpy as np
+import dask.array as da
 import warnings
+from math import sqrt
 
 from .random import array_split
 from lmdec.array.core.wrappers.time_logging import tlog
@@ -42,89 +44,114 @@ def approx_array_function(array_func: Callable,
     return _f
 
 
-def acc_format_svd(u: ArrayType,
-                   s: ArrayType,
-                   array_shape: Tuple[int, int],
-                   square: bool = True,
-                   log: int = 0) -> Tuple[ArrayType, ArrayType]:
+@tlog
+def rmse_k(array: LargeArrayType,
+           u: ArrayType,
+           s: ArrayType,
+           p: Union[float, int] = 1,
+           log: int = 1) -> Union[Tuple[float, dict], float]:
     """
-    Handles variable shapes and formats for U, S and returns
-    proper formatting U, S for error calculations.
+    Computes RMSE_k Norm
 
-    Singular vectors are assumed ground truth and will adjust singular values
+    Assumes data went through acc_format_svd(..., square=True).
 
-    :param u: Left Singular Vectors
-    :param s: Singular Values or square root of Singluar Values
-    :param array_shape:
-    :param square: Indictor of state of s.
-    :param log:
+    Therefore -> s_i = (s_i)^2
 
+    sqrt((1/nk) * sum(||(1/m)A'Au_i - u_i*s_i|| for i = 1, ..., k))
+
+    Where ||.|| refers to (||.||_2)^2
+
+    This is equivalent to
+
+    sqrt((1/nk)*(||(1/m)*A'Au - us||_{F})^2)
+
+    :param array: Matrix A
+    :param u: array_like of singular vectors
+    :param s: array_like of singular values
+    :param p: numeric between (0, 1] representing percentage of data to use
+    :param log: integer representing number of functions and sub_function layers to log.
     :return:
     """
+
+    n, m = array.shape
+    _, k = u.shape
+
+    flog = {}
+
+    acc = da.linalg.norm((1/n) * (array.dot(array.T.dot(u)) - u.dot(s)), ord='fro')
+    acc = da.sqrt(acc**2/(m*k)).compute()
+
     if log:
-        raise Exception("Does not return Logging")
-
-    m, n = array_shape
-
-    if len(u.shape) == 1:
-        # Single singular vector -> expects 1 singular value
-        m_vector = u.shape[1]
-        k_vector = 1
-    elif len(u.shape) == 2:
-        m_vector, k_vector = u.shape
+        return acc, flog
     else:
-        raise Exception('u is of the wrong shape, {}. \n Must be of shape: ({}, k) or ({},)'.format(
-            u.shape, m, m))
+        return acc
 
-    s_copy = s.copy()
-    if square:
-        s_copy = np.square(s_copy)
 
-    if len(s_copy.shape) == 1:
-        k_values = s_copy.shape[0]
-        s_copy: ArrayType = np.diag(s_copy)
-    elif len(s_copy.shape) == 2:
-        k_values1, k_values2 = s_copy.shape
-        if k_values1 != k_values2:
-            raise Exception('s is the wrong shape, {}. \n Must be of shape ({}, {}) or ({},)'.format(
-                s_copy.shape,
-                k_vector,
-                k_vector,
-                k_vector))
-        k_values = k_values1
-        s_copy: ArrayType = np.diag(np.diag(s_copy))
+@tlog
+def scaled_relative_converge_acc(x: ArrayType,
+                                 y: ArrayType,
+                                 p: Union[int, float] = 1,
+                                 norm: Union[str,int] = 2,
+                                 log: int = 1) -> Union[float, Tuple[float, dict]]:
+    """
+    Computes scaled relative change between x and y.
+
+    Let step be an iterative generator that converges to x*.
+
+    {x_0, x_1, ..., x_k-1, x_k, x_k+1, ... x*}
+
+    Thus:
+        x_k = step(x_{k-1})
+
+    Quotient Accuracy is:
+
+        2||x_k - x_{k-1}||/(||x_k|| + ||x_{k-1}||) , where ||.|| is the norm specified.
+
+    If 0 < p < 1:
+
+        Where I selects I rows of x_k
+        2||x_k[I] - x_{k-1}[I]||/(||x_k[I]|| + ||x_{k-1}[I]||) , where ||.|| is the norm specified.
+
+    :param x:
+    :param y:
+    :param p:
+    :param norm:
+    :param log:
+    :return:
+    """
+    sub_log = max(0, log - 1)
+    flog = {}
+
+    _relative_converge_acc_return = relative_converge_acc(x=x,
+                                                          y=y,
+                                                          norm=norm,
+                                                          p=p,
+                                                          log=sub_log)
+    if sub_log:
+        acc, _relative_converge_acc_return_log = _relative_converge_acc_return
+        flog[relative_converge_acc.__name__] = _relative_converge_acc_return_log
     else:
-        raise Exception('s is the wrong shape, {}. \n Must be of shape ({}, {}) or ({},)'.format(
-            s_copy.shape,
-            k_vector,
-            k_vector,
-            k_vector))
+        acc = _relative_converge_acc_return
 
-    if m == m_vector:
-        pass
-    elif m != m_vector and m == k_vector:
-        # U might be coming in as Transpose U
-        u = u.T
-        m_vector, k_vector = k_vector, m_vector
+    scale = np.linalg.norm(x, norm) + np.linalg.norm(y, norm)
+    acc /= scale
+
+    if log:
+        return acc, flog
     else:
-        raise Exception('u or s is of the wrong shape')
-
-    if k_values != k_vector:
-        raise Exception('u or s is of the wrong shape')
-
-    return u, s_copy
+        return acc
 
 
 @tlog
 def relative_converge_acc(x: ArrayType,
                           y: ArrayType,
                           p: Union[int, float] = 1,
-                          norm: str = 2,
+                          norm: Union[str, int] = 2,
                           log: int = 1) -> Union[float, Tuple[float, dict]]:
     """
     Computes relative change between x and y.
 
-    Let step be an iterative generator that conveges to x*.
+    Let step be an iterative generator that converges to x*.
 
     {x_0, x_1, ..., x_k-1, x_k, x_k+1, ... x*}
 
@@ -182,7 +209,8 @@ def relative_converge_acc(x: ArrayType,
 def scaled_svd_acc(array: LargeArrayType,
                    u: ArrayType,
                    s: ArrayType,
-                   norm: str = 'fro',
+                   scale: Union[float, int] = 1,
+                   norm: Union[int, str] = 'fro',
                    p: Union[int, float] = 1,
                    log: int = 1) -> Union[float, Tuple[float, dict]]:
     """
@@ -195,6 +223,7 @@ def scaled_svd_acc(array: LargeArrayType,
     :param array: dask array of shape m by n
     :param u:
     :param s:
+    :param scale:
     :param norm:
     :param p:
     :param log
@@ -212,6 +241,7 @@ def scaled_svd_acc(array: LargeArrayType,
         _approx_scaled_svd_acc_return = _approx_scaled_svd_acc(array=array,
                                                                u=u,
                                                                s=s,
+                                                               scale=scale,
                                                                p=p,
                                                                norm=norm,
                                                                log=sub_log)
@@ -222,7 +252,10 @@ def scaled_svd_acc(array: LargeArrayType,
             acc = _approx_scaled_svd_acc_return
 
     else:
-        denom = array.dot(array.T.dot(u))
+        denom = (array.dot(array.T.dot(u)))
+
+        if scale != 1:
+            denom *= scale
 
         acc = _scaled_norm(denom - u.dot(s), denom, norm)
 
@@ -239,8 +272,9 @@ def scaled_svd_acc(array: LargeArrayType,
 def _approx_scaled_svd_acc(array: LargeArrayType,
                            u: ArrayType,
                            s: ArrayType,
+                           scale: Union[float, int] = 1,
                            p: float = 0.1,
-                           norm: str = 'fro',
+                           norm: Union[int, str] = 'fro',
                            log: int = 1) -> Union[float, Tuple[float, dict]]:
     """
     Compute approximate scaled accuracy of u and s being left eigen pairs of AA'.
@@ -309,6 +343,9 @@ def _approx_scaled_svd_acc(array: LargeArrayType,
 
     denom = array1.dot(array1.T.dot(u1) + array2.T.dot(u2))
 
+    if scale != 1:
+        denom *= 1
+
     acc = _scaled_norm(denom - u1.dot(s), denom, norm, log=0)
 
     if isinstance(acc, DaskArrayType):
@@ -324,7 +361,7 @@ def _approx_scaled_svd_acc(array: LargeArrayType,
 def _scaled_norm(a: ArrayType,
                  scale: ArrayType,
                  norm: Union[str, int],
-                 log: int = 0) -> ArrayType:
+                 log: int = 0) -> float:
     """
     Computes ||a||/||scale|| where norm is as specified in parameters
 

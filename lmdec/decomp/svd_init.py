@@ -5,13 +5,36 @@ from dask.array.random import RandomState
 import numpy as np
 
 from ..array.core.matrix_ops import full_svd_to_k_svd, sym_mat_mult, subspace_to_SVD
-from ..array.core.metrics import scaled_svd_acc, acc_format_svd, relative_converge_acc
+from ..array.core.metrics import scaled_svd_acc, relative_converge_acc
+from lmdec import acc_format_svd
 from ..array.core.random import array_split
 from lmdec.array.core.wrappers.time_logging import tlog
-from ..array.core.types import LargeArrayType, DaskArrayType
+from ..array.core.types import LargeArrayType, ArrayType
 
 from typing import Tuple, Union
 
+
+def v_svd_start(array: LargeArrayType,
+                v: ArrayType,
+                log: int = 1):
+    """
+    Given a V matrix from a
+    :param array:
+    :param v:
+    :param log:
+    :return:
+
+    Given a matrix A
+    """
+    x_k = array.dot(v)
+    U, _, _ = tsqr(x_k, compute_svd=True)
+
+    U = U.rechunk('auto')
+
+    if log:
+        return U,  {}
+    else:
+        return U
 
 @tlog
 def eigengap_svd_start(array: LargeArrayType,
@@ -73,6 +96,8 @@ def eigengap_svd_start(array: LargeArrayType,
     :param k:
     :param b_max:
     :param warm_start_row_factor:
+    :param seed:
+    :param log:
     :return:
 
     """
@@ -83,7 +108,6 @@ def eigengap_svd_start(array: LargeArrayType,
     m, n = array.shape
 
     rows = warm_start_row_factor * (k + b_max)
-    print('Rows:', rows)
     row_fraction = rows / m
 
     _sub_svd_start_return = _sub_svd_start(array,
@@ -120,8 +144,10 @@ def eigengap_svd_start(array: LargeArrayType,
     else:
         init_acc = relative_converge_acc_return
 
-    if isinstance(S_1, DaskArrayType):
-        S: np.ndarray = S_1.compute()
+    try:
+        S = S_1.compute()
+    except AttributeError:
+        S = S_1
 
     S_gap = float('inf') * np.ones_like(S)
     S_gap[k:b_max] = S[k - 1] / S[k:b_max]
@@ -190,10 +216,9 @@ def _project_cost(cost_func, req_iter):
 
 
 @tlog
-def rerand_svd_start(array: da.core.Array,
+def sample_svd_start(array: da.core.Array,
                      k: int,
                      warm_start_row_factor: int = 5,
-                     num_warm_starts: int = 1,
                      seed: int = 42,
                      log: int = 1) -> Union[da.core.Array,
                                             Tuple[da.core.Array, dict]]:
@@ -212,50 +237,25 @@ def rerand_svd_start(array: da.core.Array,
     rows = warm_start_row_factor * k
     m, n = array.shape
     row_fraction = rows / m
-    warm_start_quality = float('inf')
-    best_start = None
 
     sub_log = max(log - 1, 0)
 
-    sub_svd_start_logs = []
-    sub_scaled_svd_logs = []
-    sub_scaled_svd_acc_logs = []
-
-    for i in range(num_warm_starts):
-        _sub_svd_start_return = _sub_svd_start(array,
-                                               k=k,
-                                               row_sampling_fraction=row_fraction,
-                                               seed=seed + i,  # seed + i -> to prevent warm starts from being identical
-                                               log=sub_log)
-        if sub_log:
-            U, S, _, _sub_svd_start_log = _sub_svd_start_return
-            sub_svd_start_logs.append(_sub_svd_start_log)
-        else:
-            U, S, _ = _sub_svd_start_return
-
-        U = U.persist()
-        U_error, S_error = acc_format_svd(U, S, array.shape, log=0)
-
-        scaled_svd_acc_return = scaled_svd_acc(array, U_error, S_error, log=sub_log)
-        if sub_log:
-            temp_acc, _sub_scaled_svd_acc_log = scaled_svd_acc_return
-            sub_scaled_svd_logs.append(_sub_scaled_svd_acc_log)
-            sub_scaled_svd_acc_logs.append(temp_acc)
-        else:
-            temp_acc = scaled_svd_acc_return
-
-        if temp_acc < warm_start_quality:
-            best_start = U
-            warm_start_quality = temp_acc
+    _sub_svd_start_return = _sub_svd_start(array,
+                                           k=k,
+                                           row_sampling_fraction=row_fraction,
+                                           seed=seed,  # seed + i -> to prevent warm starts from being identical
+                                           log=sub_log)
+    if sub_log:
+        U, S, _, _sub_svd_start_log = _sub_svd_start_return
+    else:
+        U, S, _ = _sub_svd_start_return
 
     if sub_log:
-        flog = {_sub_svd_start.__name__: [sub_svd_start_logs],
-                scaled_svd_acc.__name__: [sub_scaled_svd_logs],
-                _sub_svd_start.__name__ + '_acc': [sub_scaled_svd_acc_logs]}
+        flog = {_sub_svd_start.__name__: _sub_svd_start_log}
     else:
         flog = {}
 
-    x = array.T.dot(best_start)
+    x = array.T.dot(U)
     q, _ = tsqr(x)
 
     if log:
@@ -349,15 +349,16 @@ def _sub_svd(array: da.core.Array,
     """
     U, _, _ = tsqr(sub_array, compute_svd=True)
 
+    U = U[:, :k]
+
     x_k = array.dot(U)
     U, S, V = tsqr(x_k, compute_svd=True)
 
-    U, S, V = dask.optimize(U, S, V)
-
-    U, S, V = full_svd_to_k_svd(u=U, s=S, v=V, k=k)
+    #U, S, V = full_svd_to_k_svd(u=U, s=S, v=V, k=k)
 
     U = U.rechunk('auto')
     S = S.rechunk('auto')
+    V = V.rechunk('auto')
 
     if log:
         return U, S, V, {}

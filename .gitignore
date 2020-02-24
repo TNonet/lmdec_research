@@ -154,3 +154,5 @@ dmypy.json
 
 *.json
 *.history
+.Rproj.user
+.Rhistory

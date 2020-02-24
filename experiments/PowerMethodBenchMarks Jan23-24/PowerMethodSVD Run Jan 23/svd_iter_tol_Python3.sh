@@ -15,4 +15,4 @@
 module load python/3.6.3
 module load sloan/python/modules/3.6
 
-xvfb-run -d python3 /home/tnonet/lamade/iter_tol.py
+xvfb-run -d python3 /home/tnonet/lmdec/iter_tol.py

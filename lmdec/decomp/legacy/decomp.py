@@ -4,10 +4,11 @@ from dask.array.linalg import tsqr
 import time
 from typing import Union, Tuple
 
-from ..array.core.types import LargeArrayType, ArrayType
-from ..array.core.matrix_ops import sym_mat_mult, subspace_to_SVD
-from ..array.core.metrics import acc_format_svd, approx_array_function, scaled_svd_acc
-from .svd_init import rnormal_start, rerand_svd_start
+from lmdec.array.core.types import LargeArrayType, ArrayType
+from lmdec.array.core.matrix_ops import sym_mat_mult, subspace_to_SVD
+from lmdec.array.core.metrics import approx_array_function, scaled_svd_acc
+from lmdec.array.core.transform import acc_format_svd
+from lmdec.decomp.svd_init import rnormal_start, sample_svd_start
 from lmdec.array.core.wrappers.time_logging import tlog
 
 
@@ -102,7 +103,7 @@ def SVD_m2(array: LargeArrayType,
     vec_t = k + over_sampling
 
     if warm_start:
-        rerand_svd_start_return = rerand_svd_start(array,
+        rerand_svd_start_return = sample_svd_start(array,
                                                    k=vec_t,
                                                    num_warm_starts=num_warm_starts,
                                                    warm_start_row_factor=warm_start_row_factor,
@@ -110,7 +111,7 @@ def SVD_m2(array: LargeArrayType,
                                                    log=sub_log)
         if sub_log:
             x, rerand_svd_start_log = rerand_svd_start_return
-            flog[rerand_svd_start.__name__] = rerand_svd_start_log
+            flog[sample_svd_start.__name__] = rerand_svd_start_log
         else:
             x = rerand_svd_start_return
     else:

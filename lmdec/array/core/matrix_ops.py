@@ -19,6 +19,7 @@ def subspace_to_SVD(array: Union[LargeArrayType, ArrayType],
                     x: ArrayType,
                     k: Optional[int] = None,
                     compute: bool = False,
+                    full_v: bool = False,
                     log: int = 1) -> Union[Tuple[ArrayType, ArrayType, ArrayType],
                                            Tuple[ArrayType, ArrayType, ArrayType, dict]]:
     """
@@ -26,6 +27,7 @@ def subspace_to_SVD(array: Union[LargeArrayType, ArrayType],
     :param x:
     :param k:
     :param compute:
+    :param full_v:
     :param log:
     :return:
     """
@@ -42,8 +44,16 @@ def subspace_to_SVD(array: Union[LargeArrayType, ArrayType],
     tsqr_log = {'start': time.time()}
 
     U, S, V = tsqr(x_t, compute_svd=True)
+
+    if full_v:
+        V, _, _ = tsqr(x, compute_svd=True)
+
+
     if compute:
         U, S, V = dask.persist(U, S, V)
+
+    S = da.sqrt(S)
+
     tsqr_log['end'] = time.time()
 
     U_k, S_k, V_k = full_svd_to_k_svd(U, S, V, k=k)
@@ -65,13 +75,14 @@ def subspace_to_SVD(array: Union[LargeArrayType, ArrayType],
 @array_serializer('x')
 def sym_mat_mult(array: LargeArrayType,
                  x: ArrayType,
+                 scale: Union[float, int] = 1,
                  p: Union[int, float, slice] = 1,
                  seed: int = 42,
                  compute: bool = False,
                  log: int = 1) -> Union[ArrayType, Tuple[ArrayType, dict]]:
-    """Peforms one iteration of the block power iteration with momentum (optional)
+    """Peforms one iteration of the block power iteration
 
-    x_{k+1} <- A'(Ax) - beta*x_{past}
+    x_{k+1} <- scale*A'(Ax) - beta*x_{past}
 
 
     :param array: Dask Array of shape (m by n)
@@ -81,6 +92,7 @@ def sym_mat_mult(array: LargeArrayType,
         p < 1: Stochastic Dot Product
         type(p) == List[slice]
             Order sections
+    :param scale: Scaling for Covariance/Gram Matrix Standards
     :param seed:
     :param compute:
         We do not pre-compute x. As any function in SVDecomp should return a computed function
@@ -108,6 +120,9 @@ def sym_mat_mult(array: LargeArrayType,
         x = x.persist()
         wait(x)
     tdot_log['end'] = time.time()
+
+    if scale != 1:
+        x *= scale
 
     if log:
         flog = {}
@@ -144,8 +159,7 @@ def full_svd_to_k_svd(u: Optional[ArrayType] = None,
         s = s[:k]
         return_list.append(s)
     if v is not None:
-        v = v.T
-        v = v[:k, :]
+        v = v[:, :k].T
         return_list.append(v)
 
     if len(return_list) == 1:

@@ -4,10 +4,10 @@ from dask.array.linalg import tsqr
 import numpy as np
 import time
 
-from ..array.core.types import LargeArrayType, ArrayType, DaskArrayType
-from ..array.core.matrix_ops import sym_mat_mult, subspace_to_SVD, full_svd_to_k_svd
-from .svd_init import rerand_svd_start, rnormal_start, eigengap_svd_start
-from ..array.core.metrics import relative_converge_acc
+from lmdec.array.core.types import LargeArrayType, ArrayType, DaskArrayType
+from lmdec.array.core.matrix_ops import sym_mat_mult, subspace_to_SVD, full_svd_to_k_svd
+from lmdec.decomp.svd_init import sample_svd_start, rnormal_start, eigengap_svd_start
+from lmdec.array.core.metrics import relative_converge_acc
 
 
 class PowerMethod:
@@ -57,7 +57,7 @@ class PowerMethod:
         vec_t = self.k + self.buffer
 
         if self.sub_svd_start:
-            x = rerand_svd_start(array,
+            x = sample_svd_start(array,
                                  k=vec_t,
                                  num_warm_starts=self.num_warm_starts,
                                  warm_start_row_factor=self.init_row_sampling_factor,
@@ -117,7 +117,9 @@ class PowerMethod:
         :param seed:
         :return:
         """
-        x = sym_mat_mult(array, x, self.p, seed=seed, compute=self.compute, log=0)
+        n, p = array.shape
+
+        x = (1/n)*sym_mat_mult(array, x, self.p, seed=seed, compute=self.compute, log=0)
 
         q, _ = tsqr(x)
 
