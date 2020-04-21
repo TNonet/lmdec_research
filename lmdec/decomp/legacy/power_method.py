@@ -5,8 +5,8 @@ import numpy as np
 import time
 
 from lmdec.array.core.types import LargeArrayType, ArrayType, DaskArrayType
-from lmdec.array.core.matrix_ops import sym_mat_mult, subspace_to_SVD, full_svd_to_k_svd
-from lmdec.decomp.svd_init import sample_svd_start, rnormal_start, eigengap_svd_start
+from lmdec.array.core.matrix_ops import sym_mat_mult, subspace_to_SVD, svd_to_trunc_svd
+from lmdec.decomp.init_methods import sub_svd_init, rnormal_start, eigengap_init
 from lmdec.array.core.metrics import relative_converge_acc
 
 
@@ -57,17 +57,17 @@ class PowerMethod:
         vec_t = self.k + self.buffer
 
         if self.sub_svd_start:
-            x = sample_svd_start(array,
-                                 k=vec_t,
-                                 num_warm_starts=self.num_warm_starts,
-                                 warm_start_row_factor=self.init_row_sampling_factor,
-                                 seed=seed,
-                                 log=0)
+            x = sub_svd_init(array,
+                             k=vec_t,
+                             num_warm_starts=self.num_warm_starts,
+                             warm_start_row_factor=self.init_row_sampling_factor,
+                             seed=seed,
+                             log=0)
         else:
             x = rnormal_start(array, vec_t, log=0, seed=seed)
 
-        U, S, _ = subspace_to_SVD(array, x, k=self.k, compute=False, log=0)
-        U_k, S_k = full_svd_to_k_svd(U, S, k=self.k)
+        U, S, _ = subspace_to_SVD(x, array, k=self.k, log=0)
+        U_k, S_k = svd_to_trunc_svd(U, S, k=self.k)
 
         U_k, S_k = dask.persist(U_k, S_k)
 
@@ -134,8 +134,8 @@ class PowerMethod:
         :param x:
         :return:
         """
-        U, S, _ = subspace_to_SVD(array, x, k=self.k, compute=False, log=0)
-        U_k, S_k = full_svd_to_k_svd(U, S, k=self.k)
+        U, S, _ = subspace_to_SVD(x, array, k=self.k, log=0)
+        U_k, S_k = svd_to_trunc_svd(U, S, k=self.k)
         U_k, S_k = dask.persist(U_k, S_k)
         # First item already exists from __start
         rel_acc = relative_converge_acc(S_k, self.logs['S'][-1], log=0)
@@ -157,9 +157,9 @@ class PowerMethod:
         :param: seed:
         :return:
         """
-        U, S, V = subspace_to_SVD(array, x, k=self.k, compute=False, log=0)
+        U, S, V = subspace_to_SVD(x, array, k=self.k, log=0)
 
-        U_k, S_k, V_k = full_svd_to_k_svd(U, S, V, k=self.k)
+        U_k, S_k, V_k = svd_to_trunc_svd(U, S, V, k=self.k)
         U_k, S_k, V_k = dask.persist(U_k, S_k, V_k)
 
         return U_k, S_k, V_k
@@ -186,22 +186,16 @@ class PowerMethodEigenStart(PowerMethod):
         :return:
         """
         print('Eigen Start Method')
-        x = eigengap_svd_start(array,
-                               k=self.k,
-                               b_max=self.buffer_max,
-                               reg=self.reg,
-                               tol=self.scoring_tol,
-                               warm_start_row_factor=self.init_row_sampling_factor,
-                               seed=seed,
-                               log=0)
+        x = eigengap_init(array, k=self.k, b_max=self.buffer_max, warm_start_row_factor=self.init_row_sampling_factor,
+                          tol=self.scoring_tol, seed=seed, log=0)
 
         m, n = x.shape
 
         self.buff_opt = n - self.k
         print(n - self.k)
 
-        U, S, _ = subspace_to_SVD(array, x, k=self.k, compute=False, log=0)
-        U_k, S_k = full_svd_to_k_svd(U, S, k=self.k)
+        U, S, _ = subspace_to_SVD(x, array, k=self.k, log=0)
+        U_k, S_k = svd_to_trunc_svd(U, S, k=self.k)
 
         U_k, S_k = dask.persist(U_k, S_k)
 
@@ -264,8 +258,8 @@ class PowerMethodEigenStart(PowerMethod):
         :param x:
         :return:
         """
-        U, S, _ = subspace_to_SVD(array, x, k=self.k, compute=False, log=0)
-        U_k, S_k = full_svd_to_k_svd(U, S, k=self.k)
+        U, S, _ = subspace_to_SVD(x, array, k=self.k, log=0)
+        U_k, S_k = svd_to_trunc_svd(U, S, k=self.k)
         U_k, S_k = dask.persist(U_k, S_k)
         # First item already exists from __start
         self.logs['tol'].append(relative_converge_acc(S_k, self.logs['S'][-1], log=0).compute())
@@ -281,9 +275,9 @@ class PowerMethodEigenStart(PowerMethod):
         :param: seed:
         :return:
         """
-        U, S, V = subspace_to_SVD(array, x, k=self.k, compute=False, log=0)
+        U, S, V = subspace_to_SVD(x, array, k=self.k, log=0)
 
-        U_k, S_k, V_k = full_svd_to_k_svd(U, S, V, k=self.k)
+        U_k, S_k, V_k = svd_to_trunc_svd(U, S, V, k=self.k)
         U_k, S_k, V_k = dask.persist(U_k, S_k, V_k)
 
         return U_k, S_k, V_k
